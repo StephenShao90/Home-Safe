@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import routes from './routes/routes.js';
 import { testDbConnection } from './db/db.js';
+import ratingRoutes from './routes/ratings.js';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.get('/', (req, res) => {
 
 // API Routes
 app.use('/api/routes', routes);
+app.use('/api/ratings', ratingRoutes);
 
 // Start server AFTER DB connects
 async function startServer() {

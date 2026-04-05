@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { computeRoute } from '../services/api.js';
+import { computeRoute, submitRating } from '../services/api.js';
 import MapView from '../components/MapView.jsx';
+import RouteCard from '../components/RouteCard.jsx';
+import TripRatingModal from '../components/TripRatingModal.jsx';
 
 function RoutePlanner() {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [routeData, setRouteData] = useState(null);
   const [error, setError] = useState('');
+  const [isRatingOpen, setIsRatingOpen] = useState(false);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -18,6 +21,22 @@ function RoutePlanner() {
     } catch (err) {
       setError(err.message);
       setRouteData(null);
+    }
+  }
+
+  async function handleRatingSubmit(ratingData) {
+    try{
+      await submitRating(
+        routeData.origin,
+        routeData.destination,
+        ratingData.safetyRating,
+        ratingData.notes
+      );
+
+      console.log('Rating saved to database');
+      setIsRatingOpen(false);
+    } catch(error){
+      console.error(error.message);
     }
   }
 
@@ -81,18 +100,28 @@ function RoutePlanner() {
         </p>
       )}
 
+      <RouteCard routeData={routeData} />
+      <MapView routeData={routeData} />
+
       {routeData && (
-        <div style={{ marginTop: '2rem' }}>
-          <h2>Route Result</h2>
-          <p><strong>Origin:</strong> {routeData.origin}</p>
-          <p><strong>Destination:</strong> {routeData.destination}</p>
-          <p><strong>Distance:</strong> {routeData.distance}</p>
-          <p><strong>Duration:</strong> {routeData.duration}</p>
-          <p><strong>Safety Score:</strong> {routeData.safetyScore} / 10</p>
-        </div>
+        <button
+          onClick={() => setIsRatingOpen(true)}
+          style={{
+            marginTop: '1.5rem',
+            padding: '0.75rem 1.25rem',
+            fontSize: '1rem',
+            cursor: 'pointer'
+          }}
+        >
+          Rate This Trip
+        </button>
       )}
 
-      <MapView routeData={routeData} />
+      <TripRatingModal
+        isOpen={isRatingOpen}
+        onClose={() => setIsRatingOpen(false)}
+        onSubmit={handleRatingSubmit}
+      />
     </div>
   );
 }
