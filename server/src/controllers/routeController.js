@@ -3,7 +3,7 @@ import { getSafetyScoreForRoute} from "../services/safetyScoringService.js"
 
 export async function getTestRoute(req, res) {
   try {
-    const route = await getWalkingRoute("Waterloo, ON", "University of Waterloo");
+    const route = await getWalkingRoute(origin, destination);
     const safetyScore = await getSafetyScoreForRoute(route);
     res.status(200).json({
         ...route,
