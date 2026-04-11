@@ -10,6 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@deck.gl/google-maps": "^9.0.0",
+    "@deck.gl/layers": "^9.0.0",
+    "@googlemaps/polyline-codec": "^1.0.28",
+    "@react-google-maps/api": "^2.20.8",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

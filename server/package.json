@@ -3,7 +3,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "@googlemaps/polyline-codec": "^1.0.28"
   },
   "name": "home-safe-server",
   "version": "1.0.0",
