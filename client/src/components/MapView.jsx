@@ -7,7 +7,11 @@ function lerp(a, b, t) {
 }
 
 function lerpColor(a, b, t) {
-  return [Math.round(lerp(a[0], b[0], t)), Math.round(lerp(a[1], b[1], t)), Math.round(lerp(a[2], b[2], t))];
+  return [
+    Math.round(lerp(a[0], b[0], t)),
+    Math.round(lerp(a[1], b[1], t)),
+    Math.round(lerp(a[2], b[2], t))
+  ];
 }
 
 function getHeatColor(avgRating) {
@@ -34,11 +38,19 @@ function getHeatColor(avgRating) {
 }
 
 function getBlobLayers(cell, google, map) {
-  const center = {lat: Number(cell.center_lat),lng: Number(cell.center_lng)};
+  const center = {
+    lat: Number(cell.center_lat),
+    lng: Number(cell.center_lng)
+  };
+
   const reportCount = Number(cell.report_count) || 0;
   const fillColor = getHeatColor(Number(cell.avg_rating));
 
-  const baseRadius = reportCount >= 8 ? 180 : reportCount >= 5 ? 150 : reportCount >= 3 ? 130 : 110;
+  const baseRadius =
+    reportCount >= 8 ? 180 :
+    reportCount >= 5 ? 150 :
+    reportCount >= 3 ? 130 :
+    110;
 
   return [
     new google.maps.Circle({
@@ -114,7 +126,7 @@ function getStepNavigationInstruction(steps, userLatLng, google) {
     const decoded = google.maps.geometry.encoding.decodePath(step.polyline);
 
     for (const point of decoded) {
-        const distance = google.maps.geometry.spherical.computeDistanceBetween(
+      const distance = google.maps.geometry.spherical.computeDistanceBetween(
         userLatLng,
         point
       );
@@ -140,26 +152,42 @@ function getStartMarkerPosition(routeData, decodedPath, userLocation, startMode)
     return userLocation;
   }
 
-  if (routeData?.origin && typeof routeData.origin === 'object' && typeof routeData.origin.lat === 'number' && typeof routeData.origin.lng === 'number') {
+  if (
+    routeData?.origin &&
+    typeof routeData.origin === 'object' &&
+    typeof routeData.origin.lat === 'number' &&
+    typeof routeData.origin.lng === 'number'
+  ) {
     return routeData.origin;
   }
 
   if (decodedPath.length > 0) {
     const first = decodedPath[0];
-    return { lat: typeof first.lat === 'function' ? first.lat() : first.lat, lng: typeof first.lng === 'function' ? first.lng() : first.lng };
+    return {
+      lat: typeof first.lat === 'function' ? first.lat() : first.lat,
+      lng: typeof first.lng === 'function' ? first.lng() : first.lng
+    };
   }
 
   return null;
 }
 
 function getEndMarkerPosition(routeData, decodedPath) {
-  if (routeData?.destination && typeof routeData.destination === 'object' && typeof routeData.destination.lat === 'number' && typeof routeData.destination.lng === 'number') {
+  if (
+    routeData?.destination &&
+    typeof routeData.destination === 'object' &&
+    typeof routeData.destination.lat === 'number' &&
+    typeof routeData.destination.lng === 'number'
+  ) {
     return routeData.destination;
   }
 
   if (decodedPath.length > 0) {
     const last = decodedPath[decodedPath.length - 1];
-    return {lat: typeof last.lat === 'function' ? last.lat() : last.lat,lng: typeof last.lng === 'function' ? last.lng() : last.lng};
+    return {
+      lat: typeof last.lat === 'function' ? last.lat() : last.lat,
+      lng: typeof last.lng === 'function' ? last.lng() : last.lng
+    };
   }
 
   return null;
@@ -181,7 +209,12 @@ function getIdleBannerMessage(routeData, locationEnabled, userLocation) {
   return 'Enable live location or choose a route to begin.';
 }
 
-function clearMapObjects({polylineRef, startMarkerRef, endMarkerRef, heatCirclesRef}) {
+function clearMapObjects({
+  polylineRef,
+  startMarkerRef,
+  endMarkerRef,
+  heatCirclesRef
+}) {
   if (polylineRef.current) {
     polylineRef.current.setMap(null);
     polylineRef.current = null;
@@ -204,10 +237,16 @@ function clearMapObjects({polylineRef, startMarkerRef, endMarkerRef, heatCircles
 function getRouteColor(type) {
   if (type === 'safest') return '#16a34a';
   if (type === 'balanced') return '#eab308';
-  return '#2563eb';
+  if (type === 'quickest') return '#2563eb';
+  return '#16a34a';
 }
 
-function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode = 'manual' }) {
+function MapView({
+  routeData,
+  selectedRouteType,
+  onUseCurrentLocation,
+  startMode = 'manual'
+}) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const polylineRef = useRef(null);
@@ -226,7 +265,9 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
   const [locationEnabled, setLocationEnabled] = useState(true);
   const [locationError, setLocationError] = useState('');
   const [userLocation, setUserLocation] = useState(null);
-  const [navInstruction, setNavInstruction] = useState('Enable live location or choose a route to begin.');
+  const [navInstruction, setNavInstruction] = useState(
+    'Enable live location or choose a route to begin.'
+  );
 
   useEffect(() => {
     onUseCurrentLocationRef.current = onUseCurrentLocation;
@@ -303,6 +344,7 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
           endMarkerRef,
           heatCirclesRef
         });
+
         decodedPathRef.current = [];
 
         if (!routeData?.polyline) {
@@ -342,7 +384,6 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
 
         if (startMarkerPosition) {
           bounds.extend(startMarkerPosition);
-
           startMarkerRef.current = new google.maps.Marker({
             position: startMarkerPosition,
             map: mapRef.current,
@@ -353,7 +394,6 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
 
         if (endMarkerPosition) {
           bounds.extend(endMarkerPosition);
-
           endMarkerRef.current = new google.maps.Marker({
             position: endMarkerPosition,
             map: mapRef.current,
@@ -382,8 +422,8 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
         const cells = Array.isArray(cellsResponse)
           ? cellsResponse
           : Array.isArray(cellsResponse?.cells)
-            ? cellsResponse.cells
-            : [];
+          ? cellsResponse.cells
+          : [];
 
         if (heatmapEnabled) {
           heatCirclesRef.current = cells.flatMap((cell) =>
@@ -402,7 +442,7 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
     return () => {
       cancelled = true;
     };
-  }, [mapStatus, routeData, selectedRouteType, heatmapEnabled, startMode]);
+  }, [mapStatus, routeData, selectedRouteType, heatmapEnabled, startMode, userLocation, locationEnabled]);
 
   useEffect(() => {
     if (!locationEnabled) {
@@ -479,7 +519,11 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
           }
 
           if (decodedPathRef.current.length > 1) {
-            const userLatLng = new google.maps.LatLng(userPosition.lat, userPosition.lng);
+            const userLatLng = new google.maps.LatLng(
+              userPosition.lat,
+              userPosition.lng
+            );
+
             const nextInstruction = getStepNavigationInstruction(
               routeStepsRef.current,
               userLatLng,
@@ -663,7 +707,9 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
               </div>
             ))
           ) : (
-            <p style={{ opacity: 0.7, margin: 0 }}>Select a route to see directions.</p>
+            <p style={{ opacity: 0.7, margin: 0 }}>
+              Select a route to see directions.
+            </p>
           )}
         </div>
 
@@ -692,8 +738,12 @@ function MapView({ routeData, selectedRouteType, onUseCurrentLocation, startMode
       </div>
 
       <div style={styles.footnote}>
-        <div>Walking routes may occasionally miss some pedestrian paths or sidewalks.</div>
-        <div>Heat zones: green = safer, yellow = neutral, orange/red = lower-rated, white = no data.</div>
+        <div>
+          Walking routes may occasionally miss some pedestrian paths or sidewalks.
+        </div>
+        <div>
+          Heat zones: green = safer, yellow = neutral, orange/red = lower-rated, white = no data.
+        </div>
       </div>
     </div>
   );

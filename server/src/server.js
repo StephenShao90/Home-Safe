@@ -5,6 +5,7 @@ import routes from './routes/routes.js';
 import { testDbConnection } from './db/db.js';
 import ratingRoutes from './routes/ratings.js';
 import safetyRoutes from './routes/safety.js';
+import intelligenceRoutes from './routes/intelligenceRoutes.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.get('/', (req, res) => {
 app.use('/api/routes', routes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/safety', safetyRoutes);
+app.use('/api/intelligence', intelligenceRoutes);
 
 // Start server AFTER DB connects
 async function startServer() {

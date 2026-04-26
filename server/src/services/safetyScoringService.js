@@ -1,13 +1,14 @@
 import pool from '../db/db.js';
+import { scoreCellsWithZerve } from './zerveIntelligenceService.js';
+
+const CELL_SIZE = 0.0025;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
 function decodePolyline(polyline) {
-  if (!polyline || typeof polyline !== 'string') {
-    return [];
-  }
+  if (!polyline || typeof polyline !== 'string') return [];
 
   let index = 0;
   let lat = 0;
@@ -25,8 +26,7 @@ function decodePolyline(polyline) {
       shift += 5;
     } while (byte >= 0x20);
 
-    const deltaLat = (result & 1) ? ~(result >> 1) : (result >> 1);
-    lat += deltaLat;
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
 
     shift = 0;
     result = 0;
@@ -37,8 +37,7 @@ function decodePolyline(polyline) {
       shift += 5;
     } while (byte >= 0x20);
 
-    const deltaLng = (result & 1) ? ~(result >> 1) : (result >> 1);
-    lng += deltaLng;
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
 
     coordinates.push({
       lat: lat / 1e5,
@@ -49,134 +48,126 @@ function decodePolyline(polyline) {
   return coordinates;
 }
 
-function getRouteBounds(points) {
-  if (!points.length) {
-    return null;
-  }
-
-  let minLat = points[0].lat;
-  let maxLat = points[0].lat;
-  let minLng = points[0].lng;
-  let maxLng = points[0].lng;
-
-  for (const point of points) {
-    minLat = Math.min(minLat, point.lat);
-    maxLat = Math.max(maxLat, point.lat);
-    minLng = Math.min(minLng, point.lng);
-    maxLng = Math.max(maxLng, point.lng);
-  }
-
-  return { minLat, maxLat, minLng, maxLng };
+function toCellCoord(value) {
+  return Math.floor(value / CELL_SIZE) * CELL_SIZE + CELL_SIZE / 2;
 }
 
-function distanceSquared(a, b) {
-  const dLat = a.lat - b.lat;
-  const dLng = a.lng - b.lng;
-  return dLat * dLat + dLng * dLng;
+function toCellKey(lat, lng) {
+  return `${toCellCoord(lat).toFixed(4)},${toCellCoord(lng).toFixed(4)}`;
 }
 
-function estimateGreenCoverage(points, safetyCells) {
-  if (!points.length || !safetyCells.length) {
-    return null;
+function sampleRouteCells(points) {
+  const seen = new Set();
+  const cells = [];
+
+  const stride = Math.max(1, Math.floor(points.length / 40));
+
+  for (let i = 0; i < points.length; i += stride) {
+    const point = points[i];
+    const centerLat = Number(toCellCoord(point.lat).toFixed(6));
+    const centerLng = Number(toCellCoord(point.lng).toFixed(6));
+    const cellKey = toCellKey(point.lat, point.lng);
+
+    if (seen.has(cellKey)) continue;
+
+    seen.add(cellKey);
+
+    cells.push({
+      cell_id: cellKey,
+      lat: centerLat,
+      lng: centerLng
+    });
   }
 
-  let totalScore = 0;
-  let matchedPointCount = 0;
-  const maxDistanceSquared = 0.0025 * 0.0025 * 4;
-
-  for (const point of points) {
-    let nearestCell = null;
-    let nearestDistance = Infinity;
-
-    for (const cell of safetyCells) {
-      const center = {
-        lat: Number(cell.center_lat),
-        lng: Number(cell.center_lng)
-      };
-
-      if (!Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
-        continue;
-      }
-
-      const dist = distanceSquared(point, center);
-
-      if (dist < nearestDistance) {
-        nearestDistance = dist;
-        nearestCell = cell;
-      }
-    }
-
-    if (!nearestCell || nearestDistance > maxDistanceSquared) {
-      continue;
-    }
-
-    matchedPointCount += 1;
-
-    const avgRating = Number(nearestCell.avg_rating);
-    if (Number.isFinite(avgRating)) {
-      let weight =
-        avgRating >= 8.5 ? 1.0 :   // green
-        avgRating >= 7 ? 0.75 :    // yellow
-        avgRating >= 5 ? 0.4 :     // orange
-        0.1;                       // red
-
-      totalScore += weight;
-    }
-  }
-
-  if (matchedPointCount === 0) {
-    return null;
-  }
-
-  return Math.round((totalScore / matchedPointCount) * 100);
+  return cells;
 }
 
-async function getSafetyCellsForRoute(route) {
-  const points = decodePolyline(route?.polyline);
-  const bounds = getRouteBounds(points);
+async function saveZerveCellsToDatabase(cells) {
+  for (const cell of cells) {
+    await pool.query(
+      `
+      INSERT INTO safety_cells (
+        cell_key,
+        center_lat,
+        center_lng,
+        avg_rating,
+        report_count
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (cell_key)
+      DO UPDATE SET
+        avg_rating = EXCLUDED.avg_rating,
+        report_count = GREATEST(safety_cells.report_count, EXCLUDED.report_count)
+      `,
+      [
+        cell.cell_id,
+        cell.lat,
+        cell.lng,
+        cell.baseline_score,
+        1
+      ]
+    );
+  }
+}
 
-  if (!bounds) {
-    return [];
+function estimateCoverageFromZerveCells(cells) {
+  if (!cells.length) return 0;
+
+  let total = 0;
+
+  for (const cell of cells) {
+    const score = Number(cell.baseline_score);
+
+    if (score >= 8.5) total += 1.0;
+    else if (score >= 6.5) total += 0.75;
+    else if (score >= 4.5) total += 0.4;
+    else total += 0.1;
   }
 
-  const padding = 0.002;
-
-  const result = await pool.query(
-    `
-    SELECT center_lat, center_lng, avg_rating, report_count
-    FROM safety_cells
-    WHERE center_lat BETWEEN $1 AND $2
-      AND center_lng BETWEEN $3 AND $4
-    `,
-    [
-      bounds.minLat - padding,
-      bounds.maxLat + padding,
-      bounds.minLng - padding,
-      bounds.maxLng + padding
-    ]
-  );
-
-  return result.rows;
+  return Math.round((total / cells.length) * 100);
 }
 
 export async function getSafetyScoreForRoute(route) {
   try {
     const routePoints = decodePolyline(route?.polyline);
-    const safetyCells = await getSafetyCellsForRoute(route);
-    const greenCoverage = estimateGreenCoverage(routePoints, safetyCells);
 
-    let safetyScore = 5.0;
-
-    if (greenCoverage !== null) {
-      safetyScore = Number((2 + greenCoverage * 0.08).toFixed(2));
+    if (!routePoints.length) {
+      return {
+        safetyScore: 5,
+        greenCoverage: 0
+      };
     }
 
+    const cells = sampleRouteCells(routePoints);
+    const hour = new Date().getHours();
+
+    console.log('[SAFETY] Route points:', routePoints.length);
+    console.log('[SAFETY] Sampled cells:', cells.length);
+    console.log('[SAFETY] Calling Zerve...');
+
+    const zerveResult = await scoreCellsWithZerve(cells, hour);
+    const scoredCells = zerveResult.cells || [];
+
+    console.log('[SAFETY] Zerve returned cells:', scoredCells.length);
+
+    await saveZerveCellsToDatabase(scoredCells);
+
+    const avgScore =
+      scoredCells.reduce((sum, cell) => sum + Number(cell.baseline_score || 5), 0) /
+      Math.max(scoredCells.length, 1);
+
+    const greenCoverage = estimateCoverageFromZerveCells(scoredCells);
+
     return {
-      safetyScore: clamp(safetyScore, 0, 10),
-      greenCoverage: greenCoverage ?? 0
+      safetyScore: clamp(Number(avgScore.toFixed(2)), 0, 10),
+      greenCoverage
     };
   } catch (error) {
-    console.error('Error in getSafetyScoreForRoute:', error.message);
-    throw new Error('Failed to calculate safety score');
+    console.error('[SAFETY] Error in getSafetyScoreForRoute:', error.message);
+
+    return {
+      safetyScore: 5,
+      greenCoverage: 0
+    };
   }
 }
