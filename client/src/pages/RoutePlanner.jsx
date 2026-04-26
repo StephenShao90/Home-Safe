@@ -11,19 +11,16 @@ function normalizeRouteOptions(routePackage) {
     return [];
   }
 
-  return routePackage.routes.map((route, index) => ({
-    ...route,
-    displayId: route.optionKey || `route-${index}`,
-    type:
-      route.optionKey ||
-      route.optionkey ||
-      ['quickest', 'safest', 'balanced'][index]
-  }));
-}
-
-function getSelectedRouteId(route) {
-  if (!route) return null;
-  return route.displayId;
+  return routePackage.routes
+    .filter((route) => route && route.polyline)
+    .map((route, index) => ({
+      ...route,
+      displayId: `${route.optionKey || 'route'}-${index}-${route.routeId || index}`,
+      type:
+        route.optionKey ||
+        route.optionkey ||
+        ['quickest', 'safest', 'balanced'][index]
+    }));
 }
 
 function hasValidCoords(value) {
@@ -33,27 +30,6 @@ function hasValidCoords(value) {
     typeof value.lat === 'number' &&
     typeof value.lng === 'number'
   );
-}
-
-function fillRouteCards(routeOptions) {
-  if (routeOptions.length === 0) {
-    return [];
-  }
-
-  if (routeOptions.length >= 3) {
-    return routeOptions.slice(0, 3);
-  }
-
-  const filled = [...routeOptions];
-
-  while (filled.length < 3) {
-    filled.push({
-      ...routeOptions[routeOptions.length - 1],
-      displayId: `duplicate-${routeOptions.length}-${filled.length}`
-    });
-  }
-
-  return filled;
 }
 
 function getRouteTitle(type) {
@@ -72,7 +48,7 @@ function RoutePlanner() {
   const [origin, setOrigin] = useState({ text: '', coords: null });
   const [destination, setDestination] = useState({ text: '', coords: null });
   const [routeData, setRouteData] = useState(null);
-  const [selectedRoute, setSelectedRoute] = useState(null);
+  const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [error, setError] = useState('');
   const [isRatingOpen, setIsRatingOpen] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
@@ -81,9 +57,9 @@ function RoutePlanner() {
 
   const routeOptions = useMemo(() => normalizeRouteOptions(routeData), [routeData]);
 
-  const visibleRouteOptions = useMemo(() => {
-    return fillRouteCards(routeOptions);
-  }, [routeOptions]);
+  const selectedRoute = useMemo(() => {
+    return routeOptions.find((route) => route.displayId === selectedRouteId) || null;
+  }, [routeOptions, selectedRouteId]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -100,7 +76,7 @@ function RoutePlanner() {
     if (!hasValidCoords(resolvedOrigin) || !hasValidCoords(resolvedDestination)) {
       setError('Please select both locations from the autocomplete list.');
       setRouteData(null);
-      setSelectedRoute(null);
+      setSelectedRouteId(null);
       setIsSubmitting(false);
       return;
     }
@@ -114,11 +90,11 @@ function RoutePlanner() {
       const normalizedOptions = normalizeRouteOptions(routePackage);
 
       setRouteData(routePackage);
-      setSelectedRoute(normalizedOptions[0] || null);
+      setSelectedRouteId(normalizedOptions[0]?.displayId || null);
     } catch (err) {
       setError(err.message || 'Failed to compute route.');
       setRouteData(null);
-      setSelectedRoute(null);
+      setSelectedRouteId(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -223,19 +199,17 @@ function RoutePlanner() {
 
           {error && <div className="error-box">{error}</div>}
 
-          {visibleRouteOptions.length > 0 && (
+          {routeOptions.length > 0 && selectedRoute && (
             <div className="routes-section">
               <h2 className="routes-title">Route Options</h2>
               <div className="routes-grid">
-                {visibleRouteOptions.map((route) => (
+                {routeOptions.map((route) => (
                   <RouteCard
                     key={route.displayId}
                     routeData={route}
                     title={getRouteTitle(route.type)}
-                    isSelected={
-                      getSelectedRouteId(selectedRoute) === getSelectedRouteId(route)
-                    }
-                    onClick={() => setSelectedRoute(route)}
+                    isSelected={selectedRoute.displayId === route.displayId}
+                    onClick={() => setSelectedRouteId(route.displayId)}
                   />
                 ))}
               </div>

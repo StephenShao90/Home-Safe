@@ -2,35 +2,51 @@ import pool from '../db/db.js';
 import { SAFETY_CONFIG } from '../config/safetyConfig.js';
 import { clampScore, scoreToBucket } from '../utils/scoreUtils.js';
 
-async function getUserScoreForCell(cellId) {
+/**
+ * Batch fetch user ratings for multiple cells
+ */
+async function getUserScores(cellIds) {
+  if (!cellIds.length) return new Map();
+
   const result = await pool.query(
     `
-    SELECT AVG(safety_ratings)::numeric(10,2) AS avg_rating,
-           COUNT(*) AS rating_count
-    FROM ratings
-    WHERE cell_id = $1
+    SELECT cell_key, avg_rating, report_count
+    FROM safety_cells
+    WHERE cell_key = ANY($1)
     `,
-    [cellId]
+    [cellIds]
   );
 
-  const avg = result.rows[0]?.avg_rating;
-  const count = Number(result.rows[0]?.rating_count || 0);
+  const map = new Map();
 
-  if (!count || avg === null) {
-    return { score: null, count: 0 };
+  for (const row of result.rows) {
+    map.set(row.cell_key, {
+      score: row.avg_rating !== null ? Number(row.avg_rating) : null,
+      count: Number(row.report_count || 0)
+    });
   }
 
-  return { score: Number(avg), count };
+  return map;
 }
 
+/**
+ * Combines Zerve baseline score + user rating score
+ */
 export async function fuseSafetyCells(baselineCells) {
+  if (!baselineCells.length) return [];
+
+  const cellIds = baselineCells.map(c => c.cell_id);
+  const userMap = await getUserScores(cellIds);
+
   const fused = [];
 
   for (const cell of baselineCells) {
-    const user = await getUserScoreForCell(cell.cell_id);
+    const user = userMap.get(cell.cell_id) || { score: null, count: 0 };
 
     const publicScore = clampScore(cell.baseline_score);
-    const userScore = user.score === null ? publicScore : clampScore(user.score);
+
+    const userScore =
+      user.score === null ? publicScore : clampScore(user.score);
 
     const finalScore =
       SAFETY_CONFIG.publicWeight * publicScore +

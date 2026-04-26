@@ -1,47 +1,59 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+
 import routes from './routes/routes.js';
-import { testDbConnection } from './db/db.js';
 import ratingRoutes from './routes/ratings.js';
 import safetyRoutes from './routes/safety.js';
 import intelligenceRoutes from './routes/intelligenceRoutes.js';
+
+import { testDbConnection } from './db/db.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
-// Middleware
 app.use(
   cors({
-    origin: 'http://localhost:5173'
+    origin: process.env.CLIENT_URL || '*', 
   })
 );
 
 app.use(express.json());
 
-// Basic test route
 app.get('/', (req, res) => {
   res.json({ message: 'Home Safe API is running' });
 });
 
-// API Routes
 app.use('/api/routes', routes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/safety', safetyRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 
-// Start server AFTER DB connects
+app.use((err, req, res, next) => {
+  console.error('GLOBAL ERROR:', err);
+
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+  });
+});
+
 async function startServer() {
   try {
     await testDbConnection();
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
     });
+
+    process.on('SIGINT', () => {
+      console.log('Shutting down...');
+      server.close(() => process.exit(0));
+    });
+
   } catch (error) {
-    console.error('Failed to start server:', error.message);
+    console.error('Startup failed:', error.message);
     process.exit(1);
   }
 }

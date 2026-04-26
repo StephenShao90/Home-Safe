@@ -113,18 +113,15 @@ async function saveZerveCellsToDatabase(cells) {
 function estimateCoverageFromZerveCells(cells) {
   if (!cells.length) return 0;
 
-  let total = 0;
+  let green = 0;
 
-  for (const cell of cells) {
+  for (const cell of cells){
     const score = Number(cell.baseline_score);
 
-    if (score >= 8.5) total += 1.0;
-    else if (score >= 6.5) total += 0.75;
-    else if (score >= 4.5) total += 0.4;
-    else total += 0.1;
+    if(score>=8.5) green++;
   }
 
-  return Math.round((total / cells.length) * 100);
+  return Math.round((green/cells.length)*100);
 }
 
 export async function getSafetyScoreForRoute(route) {
@@ -146,7 +143,9 @@ export async function getSafetyScoreForRoute(route) {
     console.log('[SAFETY] Calling Zerve...');
 
     const zerveResult = await scoreCellsWithZerve(cells, hour);
-    const scoredCells = zerveResult.cells || [];
+    const scoredCells = Array.isArray(zerveResult?.cells)
+      ? zerveResult.cells
+      : [];
 
     console.log('[SAFETY] Zerve returned cells:', scoredCells.length);
 

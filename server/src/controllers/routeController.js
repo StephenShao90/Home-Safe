@@ -10,6 +10,41 @@ function isSameRoute(a, b) {
   return a?.polyline && b?.polyline && a.polyline === b.polyline;
 }
 
+/**
+ * Removes duplicate routes by comparing route polylines.
+ */
+function dedupeRoutes(routes) {
+  const unique = [];
+
+  for (const route of routes) {
+    if (!unique.some((existing) => isSameRoute(existing, route))) {
+      unique.push(route);
+    }
+  }
+
+  return unique;
+}
+
+/**
+ * Scores every route using the safety scoring service.
+ */
+async function scoreRoutes(routes) {
+  return Promise.all(
+    routes.map(async (route) => {
+      const result = await getSafetyScoreForRoute(route);
+
+      return {
+        ...route,
+        safetyScore: Number(result?.safetyScore) || 5,
+        greenCoverage: Number(result?.greenCoverage) || 0
+      };
+    })
+  );
+}
+
+/**
+ * Chooses a route between fastest and safest when possible.
+ */
 function getBalancedRoute(routes, fastestRoute, safestRoute) {
   if (!routes.length) return null;
 
@@ -30,9 +65,7 @@ function getBalancedRoute(routes, fastestRoute, safestRoute) {
         (route.durationValue || fastestTime) - fastestTime
       );
 
-      const safetyGain =
-        ((route.safetyScore || 0) - fastestSafety) / safetySpan;
-
+      const safetyGain = ((route.safetyScore || 0) - fastestSafety) / safetySpan;
       const timeShare = extraSeconds / safestExtraSeconds;
 
       return {
@@ -44,68 +77,38 @@ function getBalancedRoute(routes, fastestRoute, safestRoute) {
     })
     .sort((a, b) => a.middleDistance - b.middleDistance);
 
-  const trueMiddle = ranked.find(
-    (route) =>
-      route.polyline !== fastestRoute?.polyline &&
-      route.polyline !== safestRoute?.polyline &&
-      route.safetyGain > 0.2 &&
-      route.timeShare < 0.95
-  );
-
-  if (trueMiddle) {
-    return trueMiddle;
-  }
-
-  const compromise = ranked.find(
-    (route) =>
-      route.polyline !== safestRoute?.polyline &&
-      route.safetyGain >= 0.45 &&
-      route.timeShare <= 0.65
-  );
-
-  if (compromise) {
-    return compromise;
-  }
-
-  return safestRoute;
-}
-
-async function scoreRoutes(routes) {
-  return Promise.all(
-    routes.map(async (route) => {
-      const result = await getSafetyScoreForRoute(route);
-
-      return {
-        ...route,
-        safetyScore: Number(result?.safetyScore) || 5,
-        greenCoverage: Number(result?.greenCoverage) || 0
-      };
-    })
+  return (
+    ranked.find(
+      (route) =>
+        route.polyline !== fastestRoute?.polyline &&
+        route.polyline !== safestRoute?.polyline &&
+        route.safetyGain > 0.2 &&
+        route.timeShare < 0.95
+    ) ||
+    ranked.find(
+      (route) =>
+        route.polyline !== safestRoute?.polyline &&
+        route.safetyGain >= 0.45 &&
+        route.timeShare <= 0.65
+    ) ||
+    safestRoute
   );
 }
 
-function dedupeRoutes(routes) {
-  const unique = [];
-
-  for (const route of routes) {
-    if (!unique.some((existing) => isSameRoute(existing, route))) {
-      unique.push(route);
-    }
-  }
-
-  return unique;
-}
-
+/**
+ * Builds the frontend route response:
+ * Quickest, Safest, and Best Mix.
+ */
 function buildResponse(scoredRoutes) {
-  if (!scoredRoutes.length) {
+  const uniqueRoutes = dedupeRoutes(scoredRoutes);
+
+  if (!uniqueRoutes.length) {
     return {
       routes: [],
       allRoutes: [],
       timePenaltyMinutes: 0
     };
   }
-
-  const uniqueRoutes = dedupeRoutes(scoredRoutes);
 
   const byFastest = [...uniqueRoutes].sort(
     (a, b) => (a.durationValue || 0) - (b.durationValue || 0)
@@ -136,64 +139,50 @@ function buildResponse(scoredRoutes) {
   };
 }
 
+/**
+ * Shared route computation used by both POST and test GET endpoints.
+ */
+async function handleRouteRequest({ origin, destination, originName, destinationName }) {
+  if (!origin || !destination) {
+    const error = new Error("Origin and destination are required");
+    error.status = 400;
+    throw error;
+  }
+
+  const attachNames = (route) => ({
+    ...route,
+    originName: originName || null,
+    destinationName: destinationName || null
+  });
+
+  const googleRoutes = (await getWalkingRoutes(origin, destination)).map(attachNames);
+  const safestCandidate = await getSafestRouteCandidate(origin, destination);
+
+  const combinedRoutes = safestCandidate
+    ? [...googleRoutes, attachNames(safestCandidate)]
+    : googleRoutes;
+
+  const scoredRoutes = await scoreRoutes(combinedRoutes);
+
+  return buildResponse(scoredRoutes);
+}
+
 export async function computeRoute(req, res) {
   try {
-    const { origin, destination, originName, destinationName } = req.body;
-
-    if (!origin || !destination) {
-      return res.status(400).json({
-        error: "Origin and destination are required"
-      });
-    }
-
-    const googleRoutes = (await getWalkingRoutes(origin, destination)).map((route) => ({
-      ...route,
-      originName: originName || null,
-      destinationName: destinationName || null
-    }));
-
-    const safestCandidate = await getSafestRouteCandidate(origin, destination);
-
-    const combinedRoutes = safestCandidate
-      ? [...googleRoutes, { ...safestCandidate, originName: originName || null, destinationName: destinationName || null }]
-      : googleRoutes;
-
-    const scoredRoutes = await scoreRoutes(combinedRoutes);
-
-    res.status(200).json(buildResponse(scoredRoutes));
+    const response = await handleRouteRequest(req.body);
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Error in computeRoute:", error.message);
-    res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ error: error.message });
   }
 }
 
 export async function getTestRoute(req, res) {
   try {
-    const { origin, destination, originName, destinationName } = req.query;
-
-    if (!origin || !destination) {
-      return res.status(400).json({
-        error: "Origin and destination are required"
-      });
-    }
-
-    const googleRoutes = (await getWalkingRoutes(origin, destination)).map((route) => ({
-      ...route,
-      originName: originName || null,
-      destinationName: destinationName || null
-    }));
-
-    const safestCandidate = await getSafestRouteCandidate(origin, destination);
-
-    const combinedRoutes = safestCandidate
-      ? [...googleRoutes, { ...safestCandidate, originName: originName || null, destinationName: destinationName || null }]
-      : googleRoutes;
-
-    const scoredRoutes = await scoreRoutes(combinedRoutes);
-
-    res.status(200).json(buildResponse(scoredRoutes));
+    const response = await handleRouteRequest(req.query);
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Error in getTestRoute:", error.message);
-    res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ error: error.message });
   }
 }

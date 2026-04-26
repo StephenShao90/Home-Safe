@@ -9,75 +9,34 @@ import {
 
 const router = express.Router();
 
-/*
-  Use transaction-safe client instead of pool
-*/
-async function upsertSafetyCell(client, lat, lng, safetyRating) {
-  const { cellKey, centerLat, centerLng } = getCellData(lat, lng);
-
-  const existing = await client.query(
-    `
-    SELECT avg_rating, report_count
-    FROM safety_cells
-    WHERE cell_key = $1
-    `,
-    [cellKey]
-  );
-
-  if (existing.rows.length === 0) {
-    await client.query(
-      `
-      INSERT INTO safety_cells (cell_key, center_lat, center_lng, avg_rating, report_count)
-      VALUES ($1, $2, $3, $4, $5)
-      `,
-      [cellKey, centerLat, centerLng, safetyRating, 1]
-    );
-    return;
-  }
-
-  const current = existing.rows[0];
-  const oldAvg = Number(current.avg_rating);
-  const oldCount = Number(current.report_count);
-
-  const newCount = oldCount + 1;
-  const newAvg = (oldAvg * oldCount + safetyRating) / newCount;
-
-  await client.query(
-    `
-    UPDATE safety_cells
-    SET avg_rating = $1,
-        report_count = $2,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE cell_key = $3
-    `,
-    [newAvg, newCount, cellKey]
-  );
-}
-
-router.post('/', async (req, res) => {
-  const { origin, destination, safetyRating, notes, polyline } = req.body;
-
+function validateRatingInput({ origin, destination, safetyRating, polyline }) {
   const numericRating = Number(safetyRating);
 
-  // ✅ Strong validation
   if (!origin || !destination || numericRating == null || !polyline) {
-    return res.status(400).json({
-      error: 'Missing required fields'
-    });
+    return 'Missing required fields';
   }
 
   if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 10) {
-    return res.status(400).json({
-      error: 'Safety rating must be a number between 1 and 10'
-    });
+    return 'Safety rating must be between 1 and 10';
   }
 
+  return null;
+}
+
+router.post('/', async (req, res, next) => {
+  const { origin, destination, safetyRating, notes, polyline } = req.body;
+
+  const error = validateRatingInput(req.body);
+  if (error) {
+    return res.status(400).json({ error });
+  }
+
+  const numericRating = Number(safetyRating);
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
-    // ✅ Insert rating
     const result = await client.query(
       `
       INSERT INTO ratings (origin, destination, safety_ratings, notes)
@@ -87,29 +46,64 @@ router.post('/', async (req, res) => {
       [origin, destination, numericRating, notes]
     );
 
-    // ✅ Decode route
     const decodedPoints = decodeRoutePolyline(polyline);
-
-    // ✅ Sample + dedupe
     const sampledPoints = sampleRoutePoints(decodedPoints, 5);
     const uniquePoints = uniqueCellsFromPoints(sampledPoints);
 
-    // ✅ Update safety cells
-    for (const point of uniquePoints) {
-      await upsertSafetyCell(client, point.lat, point.lng, numericRating);
+    const cellDataList = uniquePoints.map(p => getCellData(p.lat, p.lng));
+    const cellKeys = cellDataList.map(c => c.cellKey);
+
+    const existingRes = await client.query(
+      `
+      SELECT cell_key, avg_rating, report_count
+      FROM safety_cells
+      WHERE cell_key = ANY($1)
+      `,
+      [cellKeys]
+    );
+
+    const existingMap = new Map(
+      existingRes.rows.map(row => [row.cell_key, row])
+    );
+
+    for (const cell of cellDataList) {
+      const existing = existingMap.get(cell.cellKey);
+
+      if (!existing) {
+        await client.query(
+          `
+          INSERT INTO safety_cells (cell_key, center_lat, center_lng, avg_rating, report_count)
+          VALUES ($1, $2, $3, $4, $5)
+          `,
+          [cell.cellKey, cell.centerLat, cell.centerLng, numericRating, 1]
+        );
+      } else {
+        const oldAvg = Number(existing.avg_rating);
+        const oldCount = Number(existing.report_count);
+
+        const newCount = oldCount + 1;
+        const newAvg = (oldAvg * oldCount + numericRating) / newCount;
+
+        await client.query(
+          `
+          UPDATE safety_cells
+          SET avg_rating = $1,
+              report_count = $2,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE cell_key = $3
+          `,
+          [newAvg, newCount, cell.cellKey]
+        );
+      }
     }
 
     await client.query('COMMIT');
 
     res.status(201).json(result.rows[0]);
-  } catch (error) {
+
+  } catch (err) {
     await client.query('ROLLBACK');
-
-    console.error('RATING INSERT ERROR:', error.message);
-
-    res.status(500).json({
-      error: 'Failed to save rating'
-    });
+    next(err); 
   } finally {
     client.release();
   }
