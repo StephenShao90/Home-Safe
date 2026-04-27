@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16
+    container_name: home-safe-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: home_safe
+    ports:
+      - "5432:5432"
+    volumes:
+      - home_safe_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d home_safe"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build: ./server
+    container_name: home-safe-server
+    env_file:
+      - ./server/.env
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    build: ./client
+    container_name: home-safe-client
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+
+volumes:
+  home_safe_pgdata:

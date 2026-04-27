@@ -26,6 +26,13 @@ app.get('/', (req, res) => {
   res.json({ message: 'Home Safe API is running' });
 });
 
+app.get('/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'home-safe-server',
+  });
+});
+
 app.use('/api/routes', routes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/safety', safetyRoutes);
