@@ -1,95 +1,105 @@
-Home Safe
+# Home Safe
 
-    Safety-focused navigation web application for walking routes
-    Provides routes optimized for both safety and efficiency
-    Designed for use in unfamiliar areas or late-night travel
+Home Safe is a safety-aware walking route planner that compares fastest, safest, and balanced routes using Google Maps, PostgreSQL safety data, and a deployed Zerve scoring API.
 
-Overview
+## Live Demo
 
-    Traditional maps prioritize fastest routes only
-    Home Safe introduces safety-aware routing
-    Compares multiple routes based on safety conditions
-    Helps users make informed decisions when traveling
+Frontend: https://home-safe-beryl.vercel.app  
+Backend health: https://home-safe.onrender.com/health  
 
-Features
+---
 
-    Quickest route (fastest ETA)
-    Safest route (maximizes safe areas)
-    Best mix route (balance between safety and time)
-    Safety scoring system (0–10 scale)
-    Heatmap visualization (green to red zones)
-    Smart location search with autocomplete
-    Clean route display using place names
-    AI integration with Zerve
+## Quick Test (Recommended)
 
-Tech Stack
+1. Open: https://home-safe-beryl.vercel.app  
+2. Wait ~30–60 seconds if the backend is waking up  
+3. Enter:
+   - Origin: Trinity Bellwoods Park, Toronto  
+   - Destination: Allan Gardens, Toronto  
+4. Generate routes and compare results  
 
-    React (Vite)
-    Google Maps JavaScript API
-    Node.js
-    Express.js
-    PostgreSQL
+No login or setup required.
 
-Project Structure
+---
 
-    client (frontend)
-    server (backend)
-    database (schema)
+## What It Does
 
-Setup
+- Computes walking routes between two locations  
+- Displays:
+  - Fastest route  
+  - Safest route  
+  - Best-mix route  
+- Samples route paths into geographic cells  
+- Scores safety using:
+  - Stored PostgreSQL data  
+  - Zerve AI scoring API  
+- Visualizes safety on a map  
 
-    Clone repository
-    git clone https://github.com/StephenShao90/Home-Safe.git
+---
 
-    cd Home-Safe
+## Tech Stack
 
-    Install dependencies
-    cd client
-    npm install
-    cd ../server
-    npm install
+- React + Vite  
+- Express.js  
+- PostgreSQL  
+- Docker Compose  
+- Google Maps (Routes, Places APIs)  
+- Zerve API  
+- Vercel (frontend hosting)  
+- Render (backend + database)  
 
-    Create server/.env with required variables
-    Set up database using schema.sql
+---
 
-    Run backend
-    cd server
-    npm run dev
+## Judge Testing Instructions
 
-    Run frontend
-    cd client
-    npm run dev
+1. Open the app:  
+   https://home-safe-beryl.vercel.app  
 
-    Open http://localhost:5173
+2. If slow at first, wait ~30–60 seconds (Render free tier wake-up)
 
-API Endpoints
+3. Test route:
+   - Origin: Trinity Bellwoods Park  
+   - Destination: Allan Gardens  
 
-    POST /api/routes
-    GET /api/safety/cells
-    POST /api/ratings
-    GET /api/ratings
+4. Generate routes and compare safety levels  
 
-Safety Algorithm
+5. Optional backend check:  
+   https://home-safe.onrender.com/health  
 
-    Evaluates routes based on safety coverage
-    Uses gradient scoring from green to red
-    Penalizes unsafe segments
-    Balances safety and travel time for best mix
+---
 
-Known Issues
+## Zerve Dependency
 
-    Autocomplete may prioritize distant locations
-    Safety data may be sparse in some areas
-    Best mix routing still being refined
+This project uses a deployed Zerve API for route safety scoring:
 
-Future Improvements
+https://homesafe.hub.zerve.cloud/score-cells  
 
-    Real-time safety data
-    User accounts and preferences
-    Notifications for unsafe areas
-    Mobile app version
-    Improved AI routing
+The Zerve deployment must be active for full safety scoring.
 
-License
+### Fallback Behavior
 
-    Educational and development use only
+If the Zerve API is unavailable:
+- Routes will still compute  
+- Safety scoring falls back to stored database values  
+
+---
+
+## Local Fallback (Docker)
+
+If the live deployment is inactive, the project can run locally.
+
+### Requirements
+
+- Docker Desktop  
+- Google Maps API key  
+- Zerve API endpoint  
+
+---
+
+### Setup
+
+1. Clone the repo:
+
+```bash
+git clone https://github.com/StephenShao90/Home-Safe.git
+cd Home-Safe
